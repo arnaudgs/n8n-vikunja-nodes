@@ -8,3 +8,6 @@ yarn.lock
 .vscode/launch.json
 .idea
 .direnv/
+
+# artefacts npm pack
+*.tgz

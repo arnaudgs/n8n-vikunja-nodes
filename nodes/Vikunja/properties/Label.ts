@@ -1,4 +1,5 @@
 import { INodeProperties } from 'n8n-workflow';
+import { paginatedOperation, paginationProperties, searchProperty } from './shared';
 
 export const labelProperties: INodeProperties[] = [
 	{
@@ -59,6 +60,7 @@ export const labelProperties: INodeProperties[] = [
 						method: 'GET',
 						url: '=/labels',
 					},
+					...paginatedOperation,
 				},
 			},
 			{
@@ -211,4 +213,6 @@ export const labelProperties: INodeProperties[] = [
 			},
 		},
 	},
+	...paginationProperties('label', ['getAll']),
+	searchProperty('label', ['getAll']),
 ];

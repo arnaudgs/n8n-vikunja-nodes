@@ -1,29 +1,18 @@
 import { INodeProperties } from 'n8n-workflow';
+import { FALLBACK_WEBHOOK_EVENTS } from '../helper';
+import { paginatedOperation, paginationProperties } from './shared';
 
 export interface WebhookEventOption {
 	name: string;
 	value: string;
 }
 
-export const availableWebhookEvents: WebhookEventOption[] = [
-	// Copied from /api/v1/webhooks/events
-	'project.deleted',
-	'project.shared.team',
-	'project.shared.user',
-	'project.updated',
-	'task.assignee.created',
-	'task.assignee.deleted',
-	'task.attachment.created',
-	'task.attachment.deleted',
-	'task.comment.created',
-	'task.comment.deleted',
-	'task.comment.edited',
-	'task.created',
-	'task.deleted',
-	'task.relation.created',
-	'task.relation.deleted',
-	'task.updated',
-].map((e) => ({
+/**
+ * Static fallback for the events dropdown. The list is loaded from
+ * `GET /webhooks/events` at runtime so it follows the connected instance; this
+ * copy only matters when that call is not permitted by the token.
+ */
+export const availableWebhookEvents: WebhookEventOption[] = FALLBACK_WEBHOOK_EVENTS.map((e) => ({
 	name: e,
 	value: e,
 }));
@@ -75,6 +64,7 @@ export const webhookProperties: INodeProperties[] = [
 						method: 'GET',
 						url: '=/projects/{{$parameter.webhookProject}}/webhooks',
 					},
+					...paginatedOperation,
 				},
 			},
 			{
@@ -185,12 +175,15 @@ export const webhookProperties: INodeProperties[] = [
 		},
 	},
 	{
-		displayName: 'Events',
+		displayName: 'Event Names or IDs',
 		name: 'events',
 		type: 'multiOptions',
 		default: [],
-		description: 'The webhook events which should fire this webhook target',
-		options: availableWebhookEvents,
+		description:
+			'The webhook events which should fire this webhook target. The list is read from the connected Vikunja instance. Choose from the list, or specify IDs using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
+		typeOptions: {
+			loadOptionsMethod: 'getWebhookEvents',
+		},
 		displayOptions: {
 			show: {
 				resource: ['webhook'],
@@ -204,4 +197,5 @@ export const webhookProperties: INodeProperties[] = [
 			},
 		},
 	},
+	...paginationProperties('webhook', ['getAll']),
 ];

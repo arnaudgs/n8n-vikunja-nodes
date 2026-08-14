@@ -1,19 +1,19 @@
 {
   "name": "n8n-nodes-vikunja",
-  "version": "0.4.1",
-  "description": "This is an n8n community node which lets you use Vikunja in your n8n workflows.",
+  "version": "1.0.0",
+  "description": "n8n community node for Vikunja — fork maintained by jmjs, kept in sync with the Vikunja API (v2.5.0)",
   "keywords": [
-    "n8n-community-node-package"
+    "n8n-community-node-package",
+    "vikunja"
   ],
   "license": "MIT",
-  "homepage": "",
+  "homepage": "https://github.com/jmjsdev/n8n-nodes-vikunja",
   "author": {
-    "name": "Vikunja Maintainers",
-    "email": "maintainers@vikunja.io"
+    "name": "jmjs"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/go-vikunja/n8n-vikunja-nodes"
+    "url": "https://github.com/jmjsdev/n8n-nodes-vikunja"
   },
   "main": "index.js",
   "scripts": {
@@ -38,10 +38,11 @@
     ]
   },
   "devDependencies": {
+    "@types/node": "^24.13.3",
     "@typescript-eslint/parser": "~8.52.0",
     "eslint-plugin-n8n-nodes-base": "^1.11.0",
     "gulp": "^5.0.0",
-    "n8n-workflow": "*",
+    "n8n-workflow": "~2.34.2",
     "prettier": "^3.0.0",
     "typescript": "~5.9.0"
   },

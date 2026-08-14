@@ -1,5 +1,5 @@
 {
-	"node": "n8n-nodes-base.vikunjaTrigger",
+	"node": "n8n-nodes-vikunja.vikunjaTrigger",
 	"nodeVersion": "1.0",
 	"codexVersion": "1.0",
 	"categories": ["Productivity"],

@@ -1,4 +1,5 @@
 import { INodeProperties } from 'n8n-workflow';
+import { paginatedOperation, paginationProperties, searchProperty } from './shared';
 
 export const teamProperties: INodeProperties[] = [
 	{
@@ -71,6 +72,7 @@ export const teamProperties: INodeProperties[] = [
 						method: 'GET',
 						url: '=/teams',
 					},
+					...paginatedOperation,
 				},
 			},
 			{
@@ -80,7 +82,9 @@ export const teamProperties: INodeProperties[] = [
 				routing: {
 					request: {
 						method: 'DELETE',
-						url: '=/teams/{{$parameter.team}}/members/{{$parameter.userId}}',
+						// Vikunja identifies team members by username on this route; the
+						// numeric user id this used to send always answered 404.
+						url: '=/teams/{{$parameter.team}}/members/{{$parameter.username}}',
 					},
 				},
 			},
@@ -91,7 +95,9 @@ export const teamProperties: INodeProperties[] = [
 				routing: {
 					request: {
 						method: 'POST',
-						url: '=/teams/{{$parameter.team}}/members/{{$parameter.userId}}',
+						// The /admin suffix is what actually toggles the flag; without it
+						// Vikunja answers 405 Method Not Allowed.
+						url: '=/teams/{{$parameter.team}}/members/{{$parameter.username}}/admin',
 					},
 				},
 			},
@@ -190,35 +196,17 @@ export const teamProperties: INodeProperties[] = [
 		},
 	},
 	{
-		displayName: 'User ID',
-		name: 'userId',
-		type: 'number',
-		required: true,
-		default: 0,
-		displayOptions: {
-			show: {
-				resource: ['team'],
-				operation: ['removeUser'],
-			},
-		},
-		routing: {
-			send: {
-				type: 'body',
-				property: 'user_id',
-			},
-		},
-	},
-	{
 		displayName: 'Username',
 		name: 'username',
 		type: 'string',
 		required: true,
 		default: '',
-		description: 'The username of the user you want to add to the team',
+		description:
+			'The username of the user. Team membership is addressed by username in the Vikunja API, not by numeric ID.',
 		displayOptions: {
 			show: {
 				resource: ['team'],
-				operation: ['addUser'],
+				operation: ['addUser', 'removeUser', 'updateUser'],
 			},
 		},
 		routing: {
@@ -248,4 +236,6 @@ export const teamProperties: INodeProperties[] = [
 			},
 		},
 	},
+	...paginationProperties('team', ['getAll']),
+	searchProperty('team', ['getAll']),
 ];

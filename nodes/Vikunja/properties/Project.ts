@@ -1,4 +1,15 @@
 import { INodeProperties } from 'n8n-workflow';
+import { mergeExistingProject, mergeWithExistingProperty } from '../helper';
+import { paginatedOperation, paginationProperties, searchProperty } from './shared';
+
+/** Project operations returning a collection, which are all paginated. */
+const PROJECT_COLLECTION_OPERATIONS = [
+	'getAll',
+	'getAllLinkShares',
+	'getAllTeams',
+	'getAllUsers',
+	'getProjectUsers',
+];
 
 export const projectProperties: INodeProperties[] = [
 	{
@@ -158,6 +169,30 @@ export const projectProperties: INodeProperties[] = [
 				},
 			},
 			{
+				name: 'Get All Kanban Buckets',
+				description: 'Fetch all kanban buckets of a view, along with the tasks they contain',
+				value: 'getAllBuckets',
+				action: 'Get all buckets',
+				routing: {
+					request: {
+						method: 'GET',
+						url: '=/projects/{{$parameter.project}}/views/{{$parameter.view}}/buckets',
+					},
+				},
+			},
+			{
+				name: 'Get a Link Share',
+				value: 'getLinkShare',
+				description: 'Fetch a single link share of a project',
+				action: 'Get a link share',
+				routing: {
+					request: {
+						method: 'GET',
+						url: '=/projects/{{$parameter.project}}/shares/{{$parameter.linkShareId}}',
+					},
+				},
+			},
+			{
 				name: 'Get All Link Shares',
 				description: 'Fetch all linkShares on a project',
 				value: 'getAllLinkShares',
@@ -165,8 +200,11 @@ export const projectProperties: INodeProperties[] = [
 				routing: {
 					request: {
 						method: 'GET',
-						url: '=/project/{{$parameter.project}}/shares',
+						// The singular /project/ this used to point at does not exist and
+						// always answered 404.
+						url: '=/projects/{{$parameter.project}}/shares',
 					},
+					...paginatedOperation,
 				},
 			},
 			{
@@ -191,11 +229,12 @@ export const projectProperties: INodeProperties[] = [
 						method: 'GET',
 						url: '=/projects/{{$parameter.project}}/teams',
 					},
+					...paginatedOperation,
 				},
 			},
 			{
 				name: 'Get All Users',
-				description: 'Fetch all users who have access to a project',
+				description: 'Fetch all users who were explicitly given access to a project',
 				value: 'getAllUsers',
 				action: 'Get all users',
 				routing: {
@@ -203,6 +242,21 @@ export const projectProperties: INodeProperties[] = [
 						method: 'GET',
 						url: '=/projects/{{$parameter.project}}/users',
 					},
+					...paginatedOperation,
+				},
+			},
+			{
+				name: 'Get All Users With Access',
+				description:
+					'Fetch every user who can see a project, including those who gained access through a team or a parent project. Use this to look up assignee IDs.',
+				value: 'getProjectUsers',
+				action: 'Get all users with access',
+				routing: {
+					request: {
+						method: 'GET',
+						url: '=/projects/{{$parameter.project}}/projectusers',
+					},
+					...paginatedOperation,
 				},
 			},
 			{
@@ -215,6 +269,7 @@ export const projectProperties: INodeProperties[] = [
 						method: 'GET',
 						url: '=/projects',
 					},
+					...paginatedOperation,
 				},
 			},
 			{
@@ -240,6 +295,30 @@ export const projectProperties: INodeProperties[] = [
 				},
 			},
 			{
+				name: 'Subscribe',
+				value: 'subscribe',
+				description: 'Subscribe the current user to a project to receive its notifications',
+				action: 'Subscribe to a project',
+				routing: {
+					request: {
+						method: 'PUT',
+						url: '=/subscriptions/project/{{$parameter.project}}',
+					},
+				},
+			},
+			{
+				name: 'Unsubscribe',
+				value: 'unsubscribe',
+				description: 'Unsubscribe the current user from a project',
+				action: 'Unsubscribe from a project',
+				routing: {
+					request: {
+						method: 'DELETE',
+						url: '=/subscriptions/project/{{$parameter.project}}',
+					},
+				},
+			},
+			{
 				name: 'Update',
 				value: 'update',
 				description: 'Update a project',
@@ -248,6 +327,9 @@ export const projectProperties: INodeProperties[] = [
 					request: {
 						method: 'POST',
 						url: '=/projects/{{$parameter.project}}',
+					},
+					send: {
+						preSend: [mergeExistingProject],
 					},
 				},
 			},
@@ -332,6 +414,7 @@ export const projectProperties: INodeProperties[] = [
 					'update',
 					'duplicate',
 					'getAllLinkShares',
+					'getLinkShare',
 					'createLinkShare',
 					'deleteLinkShare',
 					'getAllTeams',
@@ -339,16 +422,20 @@ export const projectProperties: INodeProperties[] = [
 					'updateTeam',
 					'removeTeam',
 					'getAllUsers',
+					'getProjectUsers',
 					'addUser',
 					'updateUser',
 					'removeUser',
 					'createBucket',
+					'getAllBuckets',
 					'updateBucket',
 					'deleteBucket',
 					'getAllProjectViews',
 					'createProjectView',
 					'updateProjectView',
 					'deleteProjectView',
+					'subscribe',
+					'unsubscribe',
 				],
 			},
 		},
@@ -383,6 +470,7 @@ export const projectProperties: INodeProperties[] = [
 				resource: ['project'],
 				operation: [
 					'createBucket',
+					'getAllBuckets',
 					'updateBucket',
 					'deleteBucket',
 					'createProjectView',
@@ -540,7 +628,7 @@ export const projectProperties: INodeProperties[] = [
 		displayOptions: {
 			show: {
 				resource: ['project'],
-				operation: ['deleteLinkShare'],
+				operation: ['deleteLinkShare', 'getLinkShare'],
 			},
 		},
 	},
@@ -590,13 +678,28 @@ export const projectProperties: INodeProperties[] = [
 		displayOptions: {
 			show: {
 				resource: ['project'],
-				operation: ['addUser', 'removeUser', 'updateUser'],
+				operation: ['removeUser', 'updateUser'],
+			},
+		},
+	},
+	{
+		displayName: 'Username',
+		name: 'projectUsername',
+		type: 'string',
+		default: '',
+		required: true,
+		description:
+			'The username of the user to grant access to. Vikunja identifies the user by name here, a numeric ID is rejected.',
+		displayOptions: {
+			show: {
+				resource: ['project'],
+				operation: ['addUser'],
 			},
 		},
 		routing: {
 			send: {
 				type: 'body',
-				property: 'user_id',
+				property: 'username',
 			},
 		},
 	},
@@ -623,7 +726,7 @@ export const projectProperties: INodeProperties[] = [
 		displayOptions: {
 			show: {
 				resource: ['project'],
-				operation: ['createLinkShare', 'addTeam', 'updateTeam'],
+				operation: ['createLinkShare', 'addTeam', 'updateTeam', 'addUser', 'updateUser'],
 			},
 		},
 		routing: {
@@ -891,5 +994,28 @@ export const projectProperties: INodeProperties[] = [
 				default: '',
 			},
 		],
+	},
+	mergeWithExistingProperty('project'),
+	...paginationProperties('project', PROJECT_COLLECTION_OPERATIONS),
+	searchProperty('project', ['getAll', 'getAllUsers', 'getProjectUsers']),
+	{
+		displayName: 'Include Archived Projects',
+		name: 'isArchivedFilter',
+		type: 'boolean',
+		default: false,
+		description:
+			'Whether archived projects are included in the result. Vikunja hides them by default.',
+		displayOptions: {
+			show: {
+				resource: ['project'],
+				operation: ['getAll'],
+			},
+		},
+		routing: {
+			send: {
+				type: 'query',
+				property: 'is_archived',
+			},
+		},
 	},
 ];

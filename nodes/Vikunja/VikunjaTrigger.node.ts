@@ -1,12 +1,14 @@
 import {
+	type IDataObject,
 	type IHookFunctions,
 	type IWebhookFunctions,
 	type INodeType,
 	type INodeTypeDescription,
 	type IWebhookResponseData,
+	NodeOperationError,
 } from 'n8n-workflow';
-import { apiRequest } from './helper';
-import { availableWebhookEvents } from './properties/Webhook';
+import { createHmac } from 'crypto';
+import { apiRequest, getWebhookEvents } from './helper';
 
 export class VikunjaTrigger implements INodeType {
 	description: INodeTypeDescription = {
@@ -37,22 +39,43 @@ export class VikunjaTrigger implements INodeType {
 		],
 		properties: [
 			{
+				// Kept as a plain number rather than a resource locator so that
+				// workflows created with earlier versions of this node keep working.
 				displayName: 'Project ID',
 				name: 'project',
 				type: 'number',
 				required: true,
 				default: 0,
-				description: 'The project you want to operate on. Choose from the list, or specify an ID.',
+				description: 'The numeric ID of the project whose events start this workflow',
 			},
 			{
-				displayName: 'Events',
+				displayName: 'Event Names or IDs',
 				name: 'events',
 				type: 'multiOptions',
 				default: [],
-				description: 'The webhook events which should fire this webhook target',
-				options: availableWebhookEvents,
+				required: true,
+				description:
+					'The webhook events which should fire this webhook target. The list is read from the connected Vikunja instance. Choose from the list, or specify IDs using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
+				typeOptions: {
+					loadOptionsMethod: 'getWebhookEvents',
+				},
+			},
+			{
+				displayName: 'Secret',
+				name: 'secret',
+				type: 'string',
+				typeOptions: { password: true },
+				default: '',
+				description:
+					'When set, Vikunja signs each request with this secret and the trigger rejects requests whose signature does not match. Strongly recommended, since the webhook URL is otherwise callable by anyone.',
 			},
 		],
+	};
+
+	methods = {
+		loadOptions: {
+			getWebhookEvents,
+		},
 	};
 
 	webhookMethods = {
@@ -67,7 +90,7 @@ export class VikunjaTrigger implements INodeType {
 
 				const webhookUrl = this.getNodeWebhookUrl('default');
 
-				for (const webhook of responseData) {
+				for (const webhook of responseData ?? []) {
 					if (webhook.target_url === webhookUrl) {
 						// Set webhook-id to be sure that it can be deleted
 						const webhookData = this.getWorkflowStaticData('node');
@@ -83,10 +106,21 @@ export class VikunjaTrigger implements INodeType {
 				const projectId = this.getNodeParameter('project') as number;
 				const endpoint = `/projects/${projectId}/webhooks`;
 
-				const body = {
+				const events = this.getNodeParameter('events') as string[];
+				if (!events.length) {
+					throw new NodeOperationError(
+						this.getNode(),
+						'At least one event has to be selected, otherwise Vikunja never calls the webhook',
+					);
+				}
+
+				const secret = this.getNodeParameter('secret', '') as string;
+
+				const body: IDataObject = {
 					target_url: webhookUrl,
-					events: this.getNodeParameter('events') as string[],
+					events,
 				};
+				if (secret) body.secret = secret;
 
 				const responseData = await apiRequest.call(this, 'PUT', endpoint, body);
 
@@ -124,31 +158,31 @@ export class VikunjaTrigger implements INodeType {
 	};
 
 	async webhook(this: IWebhookFunctions): Promise<IWebhookResponseData> {
-		const webhookName = this.getWebhookName();
-
-		if (webhookName === 'setup') {
-			// Is a create webhook confirmation request
-			const res = this.getResponseObject();
-			res.status(200).end();
-			return {
-				noWebhookResponse: true,
-			};
-		}
-
 		const bodyData = this.getBodyData();
+		const secret = this.getNodeParameter('secret', '') as string;
 
-		// TODO: Check why that does not work as expected even though it gets done as described
+		if (secret) {
+			// Vikunja signs the raw JSON body with HMAC-SHA256 and sends the hex
+			// digest in X-Vikunja-Signature, see https://vikunja.io/docs/webhooks.
+			const headerData = this.getHeaderData() as IDataObject;
+			const receivedSignature = String(headerData['x-vikunja-signature'] ?? '');
 
-		//const credentials = await this.getCredentials('vikunjaApi');
-		// // Check if the request is valid
-		// const headerData = this.getHeaderData() as IDataObject;
-		// const webhookUrl = this.getNodeWebhookUrl('default');
-		// const checkContent = JSON.stringify(bodyData) + webhookUrl;
-		// const computedSignature = createHmac('sha1', credentials.oauthSecret as string).update(checkContent).digest('base64');
-		// if (headerData['x-vikunja-webhook'] !== computedSignature) {
-		// 	// Signature is not valid so ignore call
-		// 	return {};
-		// }
+			// The raw bytes matter: Go escapes <, > and & as \u003c and friends when
+			// it marshals the payload, so re-serialising the parsed body would
+			// produce a different digest for any task holding HTML.
+			const request = this.getRequestObject();
+			const rawBody = request.rawBody;
+			const signedPayload =
+				Buffer.isBuffer(rawBody) && rawBody.length > 0 ? rawBody : JSON.stringify(bodyData);
+
+			const expectedSignature = createHmac('sha256', secret).update(signedPayload).digest('hex');
+
+			if (receivedSignature !== expectedSignature) {
+				// Returning nothing acknowledges the call without starting a run, the
+				// convention n8n triggers use for a failed signature check.
+				return {};
+			}
+		}
 
 		return {
 			workflowData: [this.helpers.returnJsonArray(bodyData)],
